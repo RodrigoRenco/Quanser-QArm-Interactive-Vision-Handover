@@ -14,7 +14,7 @@ MIN_CONFIDENCE = 0.85
 
 BALL_DIAMETER = 0.067      # 6.7 cm for a regular tennis ball
 BALL_RADIUS = BALL_DIAMETER / 2
-COMMIT_DISTANCE = 0.08     # 8 cm: Commit Point (to close the gripper)
+COMMIT_DISTANCE = 0.18     # 8 cm: Commit Point (to close the gripper)
 DEPTH_KERNEL_SIZE = 5      # 
 GRIP_HOLD = 1.0            # 
 
@@ -114,13 +114,23 @@ try:
 
                 # 3.4 If we have a valid distance, calculate 3D point
                 if distance > 0:
-                    point_3d = rs.rs2_deproject_pixel_to_point(intr, [u, v], distance)
-                    
                     if not is_estimated:
                         # Adjust Z to point to the center of the ball (since depth points to the surface)
-                        point_3d[2] += BALL_RADIUS
-                    # For estimated points, we assume the center is correct since the pinhole model is based on the ball's diameter
+                        distance_to_center = distance + BALL_RADIUS
+                    else:
+                        # Pinhole already estimates distance to the center based on total width
+                        distance_to_center = distance
 
+                    # Calculate X, Y, Z based on the distance to the center
+                    point_3d = rs.rs2_deproject_pixel_to_point(intr, [u, v], distance_to_center)
+                     
+                    # if distance > 0:
+                    # point_3d = rs.rs2_deproject_pixel_to_point(intr, [u, v], distance)
+                    
+                    # if not is_estimated:
+                        # Adjust Z to point to the center of the ball (since depth points to the surface)
+                    #    point_3d[2] += BALL_RADIUS
+                    # For estimated points, we assume the center is correct since the pinhole model is based on the ball's diameter
                     last_valid_point_3d = point_3d
                     point_to_send = point_3d
                     found_now = True
