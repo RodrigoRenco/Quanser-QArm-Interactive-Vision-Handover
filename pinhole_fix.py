@@ -9,7 +9,7 @@ from ultralytics import YOLO
 import pyrealsense2 as rs
 
 # Setup global parameters
-MODEL_PATH = r"C:\Users\piopi\Desktop\Centrale\PP S8 Robotique\codes\catching the ball\my_model.pt"
+MODEL_PATH = r"C:\Users\piopi\Desktop\Centrale\PP S8 Robotique\codes\catching the ball\model_renco.pt"
 MIN_CONFIDENCE = 0.85
 
 BALL_DIAMETER = 0.067      # 6.7 cm for a regular tennis ball
