@@ -9,7 +9,7 @@ from ultralytics import YOLO
 import pyrealsense2 as rs
 
 # Setup global parameters
-MODEL_PATH = r"C:\Users\piopi\Desktop\Centrale\PP S8 Robotique\codes\catching the ball\model_renco.pt"
+MODEL_PATH = r"C:\Users\piopi\Desktop\Centrale\PP S8 Robotique\codes\catching the ball\my_model.pt"
 MIN_CONFIDENCE = 0.85
 
 BALL_DIAMETER = 0.067      # 6.7 cm for a regular tennis ball
@@ -63,6 +63,8 @@ try:
         found_now = False
         distance = 0.0
         is_estimated = False
+        status_text = ""
+        status_color = (255, 255, 255)
 
         # 1. Capture frames from RealSense
         frames = pipeline.wait_for_frames()
@@ -128,13 +130,23 @@ try:
                         # Pinhole: Ya estima el centro
                         distance_to_center = distance
 
-                    # 1. Calculamos la posición 3D VERDADERA (Sin alteraciones falsas de Z)
+                    # 1. Calculamos la posición 3D VERDADERA
                     raw_point_3d = rs.rs2_deproject_pixel_to_point(intr, [u, v], distance_to_center)
 
+                    # --- LÓGICA DE ESTADO VISUAL (Esto era lo que faltaba) ---
+                    x_err = raw_point_3d[0]
+                    y_err = raw_point_3d[1]
+                    alignment_error = np.sqrt(x_err**2 + y_err**2)
+                    
+                    if alignment_error > ALIGN_THRESHOLD and raw_point_3d[2] < SAFE_APPROACH_Z:
+                        status_text = f"ALIGNING (Err: {alignment_error:.2f}m)"
+                        status_color = (0, 165, 255) # Naranja
+                    else:
+                        status_text = "APPROACHING..."
+                        status_color = (0, 255, 0) # Verde
+                    # ---------------------------------------------------------
+
                     # 2. FILTRO DE SUAVIZADO (EMA - Exponential Moving Average)
-                    # Esto absorbe la vibración de YOLO y evita que la muñeca del robot
-                    # se vuelva loca o gire 180 grados al estar muy cerca.
-                    global smoothed_point
                     if smoothed_point is None:
                         smoothed_point = raw_point_3d # Inicializamos en el primer frame
                     else:
