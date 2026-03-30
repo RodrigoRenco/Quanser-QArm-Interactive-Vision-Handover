@@ -14,11 +14,11 @@ MIN_CONFIDENCE = 0.85
 
 BALL_DIAMETER = 0.067      # 6.7 cm for a regular tennis ball
 BALL_RADIUS = BALL_DIAMETER / 2
-COMMIT_DISTANCE = 0.18     # 8 cm: Commit Point (to close the gripper)
+COMMIT_DISTANCE = 0.18     # 18 cm: Commit Point (to close the gripper)
 ALIGN_THRESHOLD = 0.04     # 4 cm: Threshold to consider the ball aligned for gripping
 SAFE_APPROACH_Z = 0.35     # 35 cm: A safe distance to approach the ball before committing to grip
-DEPTH_KERNEL_SIZE = 5      # 
-GRIP_HOLD = 1.0            # 
+DEPTH_KERNEL_SIZE = 5      # Size of the kernel to average depth values around the detected point
+GRIP_HOLD = 1.0            # Time in seconds to hold the grip after closing
 
 # UDP configuration
 UDP_IP = "127.0.0.1"
@@ -126,7 +126,6 @@ try:
                     # Deproject to 3D point in camera coordinates
                     point_3d = rs.rs2_deproject_pixel_to_point(intr, [u, v], distance_to_center)
                      
-                    # New logic to handle alignment and safe approach:
                     # Calculate the error in X and Y (how far the ball is from the center of the gripper)
                     x_err = point_3d[0]
                     y_err = point_3d[1]

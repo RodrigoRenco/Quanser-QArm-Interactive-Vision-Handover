@@ -14,15 +14,15 @@ MIN_CONFIDENCE = 0.85
 
 BALL_DIAMETER = 0.067      # 6.7 cm for a regular tennis ball
 BALL_RADIUS = BALL_DIAMETER / 2
-COMMIT_DISTANCE = 0.18     # 8 cm: Commit Point (to close the gripper)
+COMMIT_DISTANCE = 0.18     # 18 cm: Commit Point (to close the gripper)
 ALIGN_THRESHOLD = 0.04     # 4 cm: Threshold to consider the ball aligned for gripping
 SAFE_APPROACH_Z = 0.35     # 35 cm: A safe distance to approach the ball before committing to grip
-DAMPING_ZONE = 0.25
-DEPTH_KERNEL_SIZE = 5      # 
-GRIP_HOLD = 1.0            # 
-SMOOTHING_FACTOR = 0.15 
-smoothed_point = None
-LOST_TIMEOUT = 0.3
+DAMPING_ZONE = 0.25        # 25 cm: Start of the damping zone where we begin to slow down the approach to avoid overshooting
+DEPTH_KERNEL_SIZE = 5      # Size of the kernel to average depth values around the detected point 
+GRIP_HOLD = 1.0            # Time in seconds to hold the grip after closing
+SMOOTHING_FACTOR = 0.15    # EMA smoothing factor for 3D point (0.1-0.3 is a good range for real-time applications)
+smoothed_point = None     
+LOST_TIMEOUT = 0.3         # Time in seconds to keep sending the last known point after losing detection
 
 # UDP configuration
 UDP_IP = "127.0.0.1"
@@ -124,43 +124,44 @@ try:
                 # 3.4 If we have a valid distance, calculate 3D point
                 if distance > 0:
                     if not is_estimated:
-                        # Sensor real: Ajustamos al centro
+                        # Adjust Z to point to the center of the ball
                         distance_to_center = distance + BALL_RADIUS
                     else:
-                        # Pinhole: Ya estima el centro
+                        # Pinhole already estimates distance to the center
                         distance_to_center = distance
 
-                    # 1. Calculamos la posición 3D VERDADERA
+                    # Deproject to 3D point in camera coordinates
                     raw_point_3d = rs.rs2_deproject_pixel_to_point(intr, [u, v], distance_to_center)
 
-                    # --- LÓGICA DE ESTADO VISUAL (Esto era lo que faltaba) ---
+                    # Calculate the error in X and Y (how far the ball is from the center of the gripper)
                     x_err = raw_point_3d[0]
                     y_err = raw_point_3d[1]
+                    # If the ball is close but not well aligned, we want to pivot first before approaching:
                     alignment_error = np.sqrt(x_err**2 + y_err**2)
                     
                     if alignment_error > ALIGN_THRESHOLD and raw_point_3d[2] < SAFE_APPROACH_Z:
                         status_text = f"ALIGNING (Err: {alignment_error:.2f}m)"
-                        status_color = (0, 165, 255) # Naranja
+                        status_color = (0, 165, 255) # Orange
                     else:
+                        # If the ball is well aligned or we are still far, we can approach directly:
                         status_text = "APPROACHING..."
-                        status_color = (0, 255, 0) # Verde
-                    # ---------------------------------------------------------
+                        status_color = (0, 255, 0) # Green
 
-                    # 2. FILTRO DE SUAVIZADO (EMA - Exponential Moving Average)
+                    # Smooth the 3D point to reduce noise (especially important for close objects)
                     if smoothed_point is None:
-                        smoothed_point = raw_point_3d # Inicializamos en el primer frame
+                        smoothed_point = raw_point_3d # Start with the first valid point
                     else:
                         smoothed_point[0] = (SMOOTHING_FACTOR * raw_point_3d[0]) + ((1 - SMOOTHING_FACTOR) * smoothed_point[0])
                         smoothed_point[1] = (SMOOTHING_FACTOR * raw_point_3d[1]) + ((1 - SMOOTHING_FACTOR) * smoothed_point[1])
                         smoothed_point[2] = (SMOOTHING_FACTOR * raw_point_3d[2]) + ((1 - SMOOTHING_FACTOR) * smoothed_point[2])
 
-                    # Enviamos SIEMPRE el punto real suavizado a Simulink
+                    # Update the point to send with the smoothed value
                     point_to_send = smoothed_point
                     last_valid_point_3d = smoothed_point
                     found_now = True
                     last_detection_time = current_time
 
-                    # 3.5 Cerrar la pinza usando la distancia física
+                    # 3.5 Close the grip if we are within the commit distance
                     if distance <= COMMIT_DISTANCE:
                         grip_state = 1
                         grip_release_time = current_time + GRIP_HOLD
@@ -186,15 +187,14 @@ try:
 
         # 6. If no valid detection was found, handle YOLO flickering (Coasting)
         if not found_now:
-            # Si hace menos de LOST_TIMEOUT segundos que vimos la bola por última vez:
+            # If we lost the signal recently, keep sending the last known valid point
             if current_time - last_detection_time <= LOST_TIMEOUT:
                 point_to_send = last_valid_point_3d
                 status_text = "COASTING (Signal Lost)"
-                status_color = (0, 255, 255) # Amarillo
-                # Mostramos el texto amarillo para saber que estamos navegando a ciegas temporalmente
+                status_color = (0, 255, 255) # Yellow
                 cv2.putText(frame, status_text, (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
             else:
-                # Si pasó mucho tiempo, realmente perdimos la bola. Mandamos ceros.
+                # If we have been lost for too long, reset to zeros and show searching status
                 point_to_send = [0.0, 0.0, 0.0]
                 cv2.putText(frame, "SEARCHING...", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 2)
 
