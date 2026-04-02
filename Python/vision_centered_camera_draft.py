@@ -199,12 +199,15 @@ try:
                 cv2.putText(frame, "SEARCHING...", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 2)
 
         try:
+            # Convert the point and grip state to bytes and send via UDP
+            is_detected_flag = 1.0 if found_now else 0.0
             message_bytes = struct.pack(
-                'ffff',
+                'fffff', # 5 floats: X, Y, Z, Grip State, Detection Flag
                 point_to_send[0],
                 point_to_send[1],
                 point_to_send[2],
-                float(grip_state)
+                float(grip_state), # Grip state as float (0.0 or 1.0)
+                is_detected_flag   # Detection flag as float (0.0 for no detection, 1.0 for detection)
             )
             sock.sendto(message_bytes, (UDP_IP, UDP_PORT))
         except Exception as e:
