@@ -1,4 +1,4 @@
-# pip install mediapipe opencv-python
+# pip install mediapipe==0.10.13 opencv-python
 import cv2
 import mediapipe as mp
 import numpy as np
