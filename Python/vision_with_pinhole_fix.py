@@ -9,14 +9,17 @@ from ultralytics import YOLO
 import pyrealsense2 as rs
 
 # Setup global parameters
-MODEL_PATH = r"C:\Users\piopi\Desktop\Centrale\PP S8 Robotique\codes\catching the ball\model_renco.pt"
+MODEL_PATH = r"C:\Users\piopi\Desktop\Centrale\PP S8 Robotique\codes\catching the ball\my_model.pt"
 MIN_CONFIDENCE = 0.85
 
 BALL_DIAMETER = 0.067      # 6.7 cm for a regular tennis ball
 BALL_RADIUS = BALL_DIAMETER / 2
-COMMIT_DISTANCE = 0.18     # 8 cm: Commit Point (to close the gripper)
-DEPTH_KERNEL_SIZE = 5      # 
-GRIP_HOLD = 1.0            # 
+COMMIT_DISTANCE = 0.18     # 18 cm: Commit Point (to close the gripper)
+DEPTH_KERNEL_SIZE = 5      # Size of the kernel to average depth values around the detected point
+GRIP_HOLD = 1.0            # Time in seconds to hold the grip after closing
+
+LOST_TIMEOUT = 0.5         # Time in seconds to keep sending the last known point after losing detection
+GRIP_DELAY = 0.75          # Time in seconds to wait in the trigger zone before closing the gripper
 
 # UDP configuration
 UDP_IP = "127.0.0.1"
@@ -45,6 +48,9 @@ grip_state = 0
 grip_release_time = None
 frame_rate_buffer = []
 fps_avg_len = 30
+
+last_detection_time = 0.0
+grip_trigger_start_time = None
 
 # Main loop
 try:
@@ -134,11 +140,18 @@ try:
                     last_valid_point_3d = point_3d
                     point_to_send = point_3d
                     found_now = True
+                    last_detection_time = current_time # Update last detection time
 
-                    # 3.5 If the ball is within the commit distance, trigger the grip
+                    # 3.5 Delayed Gripper Actuation Logic
                     if distance <= COMMIT_DISTANCE:
-                        grip_state = 1
-                        grip_release_time = current_time + GRIP_HOLD
+                        if grip_trigger_start_time is None:
+                            grip_trigger_start_time = current_time # Start the 0.75s timer
+                        elif current_time - grip_trigger_start_time >= GRIP_DELAY:
+                            grip_state = 1
+                            grip_release_time = current_time + GRIP_HOLD
+                    else:
+                        grip_trigger_start_time = None # Reset timer if the ball moves away
+
 
                 # 4. Draw bounding box, center, and distance on the frame
                 cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
@@ -158,10 +171,17 @@ try:
                 grip_release_time = None
             else:
                 grip_state = 1
-
-        # 6. If no valid detection was found, send zeros
+            
+        # 6. Null Coordinate Fix & Gripper Reset
         if not found_now:
-            point_to_send = [0.0, 0.0, 0.0]
+            grip_trigger_start_time = None # Cancel grip timer if we lose sight of the ball
+            
+            # Keep sending the last known point for a short duration after losing detection
+            if current_time - last_detection_time <= LOST_TIMEOUT:
+                point_to_send = last_valid_point_3d
+                cv2.putText(frame, f"COASTING ({LOST_TIMEOUT}s Hold)", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            else:
+                point_to_send = [0.0, 0.0, 0.0]
 
         try:
             # Convert the point and grip state to bytes and send via UDP
