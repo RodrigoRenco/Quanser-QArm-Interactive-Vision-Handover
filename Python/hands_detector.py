@@ -17,6 +17,14 @@ def es_mano_abierta(hand_landmarks):
             return False
     return True
 
+def get_hand_scale(hand_landmarks):
+    """Devuelve (ancho, alto) de la mano en coordenadas normalizadas."""
+    xs = [lm.x for lm in hand_landmarks.landmark]
+    ys = [lm.y for lm in hand_landmarks.landmark]
+    width = max(xs) - min(xs)
+    height = max(ys) - min(ys)
+    return width, height
+
 
 # =========================
 # FUNCIONES DE GESTOS
@@ -64,7 +72,21 @@ def es_pulgar_arriba(hand_landmarks):
     return pulgar_arriba and cerrados
 
 
-def dedos_cerrados_excluyendo(hand_landmarks, excluir_indices):
+def dedos_cerrados_excluyendo(hand_landmarks, excluir_indices, scale_factor=0.1):
+    """
+    Verifica que corazón, anular y meñique estén cerrados.
+    Usa un umbral proporcional a la altura de la mano.
+    """
+    _, hand_height = get_hand_scale(hand_landmarks)
+    threshold = hand_height * scale_factor  # ej. 10% de la altura
+    tips = [12, 16, 20]      # puntas de corazón, anular, meñique
+    pips = [10, 14, 18]      # articulaciones PIP correspondientes
+    for tip, pip in zip(tips, pips):
+        if tip not in excluir_indices:
+            # Cerrado si la punta está más baja que la PIP + umbral
+            if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[pip].y + threshold:
+                return False
+    return True
     """
     Verifica que los dedos corazón, anular y meñique estén cerrados.
     excluir_indices: lista de índices de puntas que se permiten abiertos (ej. [8] para índice).
@@ -79,38 +101,37 @@ def dedos_cerrados_excluyendo(hand_landmarks, excluir_indices):
     return True
 
 def es_apuntar_derecha(hand_landmarks):
-    # Umbral para considerar que el dedo apunta hacia la derecha (en x)
-    THRESH_X = 0.03  # coordenadas normalizadas
+    hand_width, hand_height = get_hand_scale(hand_landmarks)
+    min_extension = hand_width * 0.15   # 15% del ancho de la mano
 
-    # ---- ÍNDICE extendido hacia la derecha? ----
+    # ---- ÍNDICE extendido hacia la derecha ----
     indice_tip = hand_landmarks.landmark[8]
     indice_pip = hand_landmarks.landmark[6]
-    indice_extendido = (indice_tip.x > indice_pip.x + THRESH_X)
-    # Opcional: asegurar que el índice no apunte demasiado arriba/abajo
+    indice_extendido = (indice_tip.x - indice_pip.x) > min_extension
     if indice_extendido:
-        # Verificar que los demás dedos estén cerrados (excluyendo índice)
         if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[8]):
             return True
 
-    # ---- PULGAR extendido hacia la derecha? ----
+    # ---- PULGAR extendido hacia la derecha ----
     pulgar_tip = hand_landmarks.landmark[4]
-    pulgar_ip = hand_landmarks.landmark[3]   # articulación interfalángica del pulgar
-    pulgar_extendido = (pulgar_tip.x > pulgar_ip.x + THRESH_X)
+    pulgar_ip = hand_landmarks.landmark[3]
+    pulgar_extendido = (pulgar_tip.x - pulgar_ip.x) > min_extension
     if pulgar_extendido:
-        # Verificar que índice, corazón, anular, meñique estén cerrados
-        if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[4]):  # 4 no está en tips, manejamos aparte
-            # Además comprobar que el índice no esté extendido accidentalmente
-            indice_cerrado = hand_landmarks.landmark[8].y > hand_landmarks.landmark[6].y
+        if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[4]):
+            # Además el índice debe estar cerrado
+            indice_cerrado = (hand_landmarks.landmark[8].y - hand_landmarks.landmark[6].y) > (hand_height * 0.05)
             if indice_cerrado:
                 return True
     return False
 
 def es_apuntar_izquierda(hand_landmarks):
-    THRESH_X = 0.03
+    hand_width, hand_height = get_hand_scale(hand_landmarks)
+    min_extension = hand_width * 0.15
+
     # ---- ÍNDICE extendido hacia la izquierda ----
     indice_tip = hand_landmarks.landmark[8]
     indice_pip = hand_landmarks.landmark[6]
-    indice_extendido = (indice_tip.x < indice_pip.x - THRESH_X)
+    indice_extendido = (indice_pip.x - indice_tip.x) > min_extension
     if indice_extendido:
         if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[8]):
             return True
@@ -118,11 +139,10 @@ def es_apuntar_izquierda(hand_landmarks):
     # ---- PULGAR extendido hacia la izquierda ----
     pulgar_tip = hand_landmarks.landmark[4]
     pulgar_ip = hand_landmarks.landmark[3]
-    pulgar_extendido = (pulgar_tip.x < pulgar_ip.x - THRESH_X)
+    pulgar_extendido = (pulgar_ip.x - pulgar_tip.x) > min_extension
     if pulgar_extendido:
-        # Verificar que los otros dedos estén cerrados
         if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[4]):
-            indice_cerrado = hand_landmarks.landmark[8].y > hand_landmarks.landmark[6].y
+            indice_cerrado = (hand_landmarks.landmark[8].y - hand_landmarks.landmark[6].y) > (hand_height * 0.05)
             if indice_cerrado:
                 return True
     return False
