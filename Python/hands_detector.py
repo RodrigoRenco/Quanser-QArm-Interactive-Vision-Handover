@@ -259,9 +259,9 @@ while True:
                 gesto = "LEFT"
                 color = (255, 0, 0)
 
-            elif es_ok(hand_landmarks):
-                gesto = "OK"
-                color = (255, 0, 255)
+            #elif es_ok(hand_landmarks):
+            #    gesto = "OK"
+            #    color = (255, 0, 255)
 
             #elif dedos == 1:
             #    gesto = "1 FINGER"
