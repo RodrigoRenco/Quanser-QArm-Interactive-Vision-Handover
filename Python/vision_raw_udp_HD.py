@@ -8,7 +8,7 @@ import numpy as np
 from ultralytics import YOLO
 import pyrealsense2 as rs
 
-import mediapipe as mp
+import mediapipe as mp # mediapipe==0.10.14
 from hands_detector import (
     es_apuntar_derecha, es_apuntar_izquierda, es_ok, es_palm_stop
 )
