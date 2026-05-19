@@ -33,7 +33,7 @@ if not os.path.exists(MODEL_PATH):
 model = YOLO(MODEL_PATH, task='detect')
 print("YOLO model loaded.")
 
-# ===================== GESTURE: INITIALIZE MEDIAPIPE =====================
+# Start Mediapipe
 mp_hands = mp.solutions.hands
 hands_detector = mp_hands.Hands(
     static_image_mode=False,
@@ -44,9 +44,8 @@ hands_detector = mp_hands.Hands(
 
 gesture_history = []
 HIST_SIZE = 5
-# =========================================================================
 
-# RealSense pipeline
+# Start RealSense pipeline
 pipeline = rs.pipeline()
 config = rs.config()
 config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
@@ -77,7 +76,7 @@ def obtener_gesto(hand_landmarks):
     else:
         return "HAND"   
 
-# ===================== PRINCIPAL LOOP =====================
+# Main loop
 try:
     while True:
         t_start = time.perf_counter()
@@ -87,7 +86,7 @@ try:
         point_pinhole = [0.0, 0.0, 0.0]
         found_now = False
 
-        # 1. Capturar frames
+        # 1. Capture frames from RealSense
         frames = pipeline.wait_for_frames()
         align = rs.align(rs.stream.color)
         aligned_frames = align.process(frames)
@@ -99,57 +98,56 @@ try:
         intr = color_frame.profile.as_video_stream_profile().intrinsics
         frame = np.asanyarray(color_frame.get_data())   # imagen BGR
 
-        # ===================== GESTOS: DETECTAR MANOS =====================
+        # 2. Detect Hand Gestures
         gesto_str = "NONE"
-        # Convertir a RGB para MediaPipe
+        # Convert to RGB for Mediapipe
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results_hands = hands_detector.process(rgb_frame)
         
         if results_hands.multi_hand_landmarks:
-            # Tomamos la primera mano detectada
+            # Take the first detected hand
             hand_landmarks = results_hands.multi_hand_landmarks[0]
-            # Dibujar landmarks (opcional, consume un poco de CPU)
+            # Draw landmarks (optional)
             mp.solutions.drawing_utils.draw_landmarks(
                 frame, hand_landmarks, mp_hands.HAND_CONNECTIONS
             )
-            # Obtener gesto actual
+            # Obtain current gesture
             gesto_actual = obtener_gesto(hand_landmarks)
             
-            # Suavizado temporal
+            # Take the most common detection from the history
             gesture_history.append(gesto_actual)
             if len(gesture_history) > HIST_SIZE:
                 gesture_history.pop(0)
-            # Gestor final = el más frecuente en el historial
             from collections import Counter
             gesto_str = Counter(gesture_history).most_common(1)[0][0]
         else:
-            # No hay mano → reiniciar historial
+            # Reset history when no hand detected
             gesture_history.clear()
             gesto_str = "NONE"
         
-        # Mostrar el gesto en la imagen
+        # Show gesture in the image
         cv2.putText(frame, f"Gesto: {gesto_str}", (10, 90),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        # =================================================================
 
-        # 2. YOLO Detection (sin cambios)
+        # 3. YOLO Detection 
         results = model(frame, verbose=False)
         detections = results[0].boxes
 
-        # 3. Procesar detecciones (igual que antes)
+        # 4. Process detections
         if detections is not None:
             for det in detections:
                 conf = det.conf.item()
                 if conf < MIN_CONFIDENCE:
                     continue
 
+                # 4.1 Get bounding box and calculate center
                 xyxy = det.xyxy.cpu().numpy().squeeze().astype(int)
                 xmin, ymin, xmax, ymax = xyxy
                 u = int((xmin + xmax) / 2)
                 v = int((ymin + ymax) / 2)
-                w_pixels = xmax - xmin
+                w_pixels = xmax - xmin # Width of the bounding box in pixels
 
-                # Profundidad por sensor
+                # 4.2 Obtain depth from RealSense at the center
                 depths = []
                 for i in range(-half_k, half_k + 1):
                     for j in range(-half_k, half_k + 1):
@@ -159,40 +157,43 @@ try:
                                 depths.append(d)
                 sensor_distance = np.median(depths) if depths else 0.0
 
-                # Distancia pinhole
+                # 4.3 Calculate Pinhole Distance
                 pinhole_distance = 0.0
                 if w_pixels > 0:
                     fx = intr.fx
                     pinhole_distance = (fx * BALL_DIAMETER) / w_pixels
 
-                # Puntos 3D
+                # 4.4 Calculate both Raw 3D points
                 if sensor_distance > 0:
                     point_sensor = rs.rs2_deproject_pixel_to_point(intr, [u, v], sensor_distance + BALL_RADIUS)
                 if pinhole_distance > 0:
                     point_pinhole = rs.rs2_deproject_pixel_to_point(intr, [u, v], pinhole_distance)
 
+                # Determine if we have at least one valid detection
                 if sensor_distance > 0 or pinhole_distance > 0:
                     found_now = True
 
-                # Dibujado (sin cambios)
+                # 5. Draw visualizations for debugging
                 cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
                 cv2.circle(frame, (u, v), 5, (0, 0, 255), -1)
+                # Display both distances on the screen
                 dist_str = f"S:{sensor_distance:.2f}m | P:{pinhole_distance:.2f}m"
                 (text_width, text_height), _ = cv2.getTextSize(dist_str, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-                text_x = xmax + 5
+                text_x = xmax + 5 # Default position: right side
                 if text_x + text_width > 640:
                     text_x = xmin - 5 - text_width
+                    # If the box is so huge the text still clips on the left, lock it to the screen edge
                     if text_x < 0:
                         text_x = 5
                 cv2.putText(frame, dist_str, (text_x, ymin + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-                break  # solo la primera bola
+                break  # Only process the first detected ball
 
-        # 4. UDP Communication 
+        # 6. UDP Communication 
         try:
             found_now_flag = 1.0 if found_now else 0.0
             gesto_float = float(GESTO_TO_INT.get(gesto_str, 0))
             message_bytes = struct.pack(
-                'ffffffff',   # 8 floats: Sensor XYZ, Pinhole XYZ, Detection Flag, Gesto
+                'ffffffff',   # 8 floats: Sensor XYZ, Pinhole XYZ, Detection Flag, Gesture
                 float(point_sensor[0]),  # 1
                 float(point_sensor[1]),  # 2
                 float(point_sensor[2]),  # 3
@@ -206,12 +207,16 @@ try:
         except Exception as e:
             print(f"UDP Error: {e}")
 
-        # 5. Mostrar FPS y estado
+        # 7. Display FPS and Status (Optimized for minimum latency)
         fps = 1.0 / (time.perf_counter() - t_start)
         cv2.putText(frame, f"Raw FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         status_txt = "SENDING DUAL RAW DATA" if found_now else "TARGET LOST (SENDING 0s)"
         status_col = (0, 255, 0) if found_now else (0, 0, 255)
         cv2.putText(frame, status_txt, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_col, 2)
+
+        # Uncomment these lines to display the individual sensor and pinhole distances on the frame for debugging
+        # cv2.putText(frame, f"Sens: [{point_sensor[0]:.2f}, {point_sensor[1]:.2f}]", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        # cv2.putText(frame, f"Pinh: [{point_pinhole[0]:.2f}, {point_pinhole[1]:.2f}]", (10, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
         cv2.imshow("YOLO Ball Detection + Gestos", frame)
         if cv2.waitKey(1) & 0xFF in [ord('q'), ord('Q')]:
