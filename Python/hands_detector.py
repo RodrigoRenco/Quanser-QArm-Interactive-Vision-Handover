@@ -1,33 +1,26 @@
 # pip install mediapipe opencv-python
+
 import cv2
 import mediapipe as mp
 import numpy as np
+import math
 
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
 # =========================
-# FUNCIONES BASE
+# BASE
 # =========================
-
-def es_mano_abierta(hand_landmarks):
-    tips = [8, 12, 16, 20]
-    for tip in tips:
-        if hand_landmarks.landmark[tip].y > hand_landmarks.landmark[tip - 2].y:
-            return False
-    return True
 
 def get_hand_scale(hand_landmarks):
-    """Devuelve (ancho, alto) de la mano en coordenadas normalizadas."""
     xs = [lm.x for lm in hand_landmarks.landmark]
     ys = [lm.y for lm in hand_landmarks.landmark]
-    width = max(xs) - min(xs)
-    height = max(ys) - min(ys)
-    return width, height
+
+    return max(xs) - min(xs), max(ys) - min(ys)
 
 
 # =========================
-# FUNCIONES DE GESTOS
+# GESTOS BASE
 # =========================
 
 def es_puno(hand_landmarks):
@@ -38,181 +31,157 @@ def es_puno(hand_landmarks):
     return True
 
 
-def es_palma(hand_landmarks):
-    tips = [8, 12, 16, 20]
-    for tip in tips:
-        if hand_landmarks.landmark[tip].y > hand_landmarks.landmark[tip - 2].y:
-            return False
-
-    # Pulgar también abierto
-    return hand_landmarks.landmark[4].x > hand_landmarks.landmark[3].x
-
-
-def es_ok(hand_landmarks):
-    pulgar = hand_landmarks.landmark[4]
-    indice = hand_landmarks.landmark[8]
-    
-    distancia = ((pulgar.x - indice.x)**2 + (pulgar.y - indice.y)**2)**0.5
-    
-    return distancia < 0.05
-
-
-def es_pulgar_arriba(hand_landmarks):
-    pulgar_tip = hand_landmarks.landmark[4]
-    pulgar_ip = hand_landmarks.landmark[3]
-
-    pulgar_arriba = pulgar_tip.y < pulgar_ip.y
-
-    otros_dedos = [8, 12, 16, 20]
-    cerrados = True
-    for tip in otros_dedos:
-        if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[tip - 2].y:
-            cerrados = False
-
-    return pulgar_arriba and cerrados
-
-
-def dedos_cerrados_excluyendo(hand_landmarks, excluir_indices, scale_factor=0.1):
-    """
-    Verifica que corazón, anular y meñique estén cerrados.
-    Usa un umbral proporcional a la altura de la mano.
-    """
-    _, hand_height = get_hand_scale(hand_landmarks)
-    threshold = hand_height * scale_factor  # ej. 10% de la altura
-    tips = [12, 16, 20]      # puntas de corazón, anular, meñique
-    pips = [10, 14, 18]      # articulaciones PIP correspondientes
-    for tip, pip in zip(tips, pips):
-        if tip not in excluir_indices:
-            # Cerrado si la punta está más baja que la PIP + umbral
-            if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[pip].y + threshold:
-                return False
-    return True
-    """
-    Verifica que los dedos corazón, anular y meñique estén cerrados.
-    excluir_indices: lista de índices de puntas que se permiten abiertos (ej. [8] para índice).
-    """
-    tips = [12, 16, 20]  # corazón, anular, meñique
+def dedos_cerrados_excluyendo(hand_landmarks, excluir_indices):
+    tips = [12, 16, 20]
     pips = [10, 14, 18]
+
     for tip, pip in zip(tips, pips):
         if tip not in excluir_indices:
-            # Consideramos cerrado si la punta está más abajo (mayor y) que la PIP
             if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[pip].y:
                 return False
     return True
 
-def es_apuntar_derecha(hand_landmarks):
+
+# =========================
+# ÍNDICE DIRECCIONAL
+# =========================
+
+def indice_apunta_en_rango(hand_landmarks, angulo_min, angulo_max):
+
+    tip = hand_landmarks.landmark[8]
+    pip = hand_landmarks.landmark[6]
+    mcp = hand_landmarks.landmark[5]
+
+    dx = tip.x - mcp.x
+    dy = -(tip.y - mcp.y)
+
+    longitud = math.sqrt(dx * dx + dy * dy)
+
     hand_width, hand_height = get_hand_scale(hand_landmarks)
-    min_extension = hand_width * 0.15   # 15% del ancho de la mano
 
-    # ---- ÍNDICE extendido hacia la derecha ----
-    indice_tip = hand_landmarks.landmark[8]
-    indice_pip = hand_landmarks.landmark[6]
-    indice_extendido = (indice_tip.x - indice_pip.x) > min_extension
-    if indice_extendido:
-        if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[8]):
-            return True
+    if longitud < hand_width * 0.25:
+        return False
 
-    # ---- PULGAR extendido hacia la derecha ----
-    pulgar_tip = hand_landmarks.landmark[4]
-    pulgar_ip = hand_landmarks.landmark[3]
-    pulgar_extendido = (pulgar_tip.x - pulgar_ip.x) > min_extension
-    if pulgar_extendido:
-        if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[4]):
-            # Además el índice debe estar cerrado
-            indice_cerrado = (hand_landmarks.landmark[8].y - hand_landmarks.landmark[6].y) > (hand_height * 0.05)
-            if indice_cerrado:
-                return True
-    return False
+    if tip.y >= pip.y:
+        return False
 
-def es_apuntar_izquierda(hand_landmarks):
-    hand_width, hand_height = get_hand_scale(hand_landmarks)
-    min_extension = hand_width * 0.15
+    if not dedos_cerrados_excluyendo(hand_landmarks, [8]):
+        return False
 
-    # ---- ÍNDICE extendido hacia la izquierda ----
-    indice_tip = hand_landmarks.landmark[8]
-    indice_pip = hand_landmarks.landmark[6]
-    indice_extendido = (indice_pip.x - indice_tip.x) > min_extension
-    if indice_extendido:
-        if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[8]):
-            return True
+    angulo = math.degrees(math.atan2(dy, dx))
+    if angulo < 0:
+        angulo += 360
 
-    # ---- PULGAR extendido hacia la izquierda ----
-    pulgar_tip = hand_landmarks.landmark[4]
-    pulgar_ip = hand_landmarks.landmark[3]
-    pulgar_extendido = (pulgar_ip.x - pulgar_tip.x) > min_extension
-    if pulgar_extendido:
-        if dedos_cerrados_excluyendo(hand_landmarks, excluir_indices=[4]):
-            indice_cerrado = (hand_landmarks.landmark[8].y - hand_landmarks.landmark[6].y) > (hand_height * 0.05)
-            if indice_cerrado:
-                return True
-    return False
+    return angulo_min <= angulo <= angulo_max
 
 
-def contar_dedos(hand_landmarks):
-    dedos = 0
-
-    tips = [8, 12, 16, 20]
-    pip = [6, 10, 14, 18]
-
-    for t, p in zip(tips, pip):
-        if hand_landmarks.landmark[t].y < hand_landmarks.landmark[p].y:
-            dedos += 1
-
-    # Pulgar
-    if hand_landmarks.landmark[4].x < hand_landmarks.landmark[3].x:
-        dedos += 1
-
-    return dedos
+# =========================
+# STOP MEJORADO (MÁS LEJOS)
+# =========================
 
 def es_palm_stop(hand_landmarks):
-    if not es_mano_abierta(hand_landmarks):
+
+    dedos = [8, 12, 16, 20]
+
+    extendidos = 0
+    for tip in dedos:
+        if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[tip - 2].y:
+            extendidos += 1
+
+    if extendidos < 4:
         return False
 
     wrist = hand_landmarks.landmark[0]
-    dedos_y = [
-        hand_landmarks.landmark[8].y,
-        hand_landmarks.landmark[12].y,
-        hand_landmarks.landmark[16].y,
-        hand_landmarks.landmark[20].y,
-    ]
 
-    # Dedos arriba de la muñeca → vertical
-    vertical = all(d < wrist.y for d in dedos_y)
+    hand_width, hand_height = get_hand_scale(hand_landmarks)
 
-    # Palma hacia cámara → diferencia en Z (dedos más cerca)
-    dedos_z = [hand_landmarks.landmark[t].z for t in [8,12,16,20]]
-    palm_z = hand_landmarks.landmark[9].z
+    xs = [hand_landmarks.landmark[t].x for t in dedos]
+    ys = [hand_landmarks.landmark[t].y for t in dedos]
 
-    hacia_camara = (sum(dedos_z)/4) < palm_z - 0.02
+    apertura = max(xs) - min(xs)
 
-    return vertical and hacia_camara
-
-def es_offer(hand_landmarks):
-    if not es_mano_abierta(hand_landmarks):
+    # 👇 MÁS ROBUSTO A DISTANCIA
+    if apertura < hand_width * 0.45:
         return False
 
-    wrist = hand_landmarks.landmark[0]
-    palm = hand_landmarks.landmark[9]
+    if not all(y < wrist.y for y in ys):
+        return False
 
-    # Mano NO vertical
-    dedos_y = [
-        hand_landmarks.landmark[8].y,
-        hand_landmarks.landmark[12].y,
-        hand_landmarks.landmark[16].y,
-        hand_landmarks.landmark[20].y,
-    ]
+    altura = max(ys) - min(ys)
 
-    variacion_y = max(dedos_y) - min(dedos_y)
-    horizontal = variacion_y < 0.12
+    if altura > hand_height * 0.5:
+        return False
 
-    # Palma NO mirando a la cámara (clave)
-    dedos_z = [hand_landmarks.landmark[t].z for t in [8,12,16,20]]
-    promedio_dedos_z = sum(dedos_z) / 4
+    return True
 
-    no_frontal = abs(promedio_dedos_z - palm.z) < 0.05
 
-    return horizontal and no_frontal
+# =========================
+# DETECCIÓN DIRECCIONAL CON MANO
+# =========================
 
+def es_apuntar_derecha(hand_landmarks, tipo_mano):
+
+    # Índice
+    if tipo_mano == "Right":
+        index_ok = (
+            indice_apunta_en_rango(hand_landmarks, 0, 60) or
+            indice_apunta_en_rango(hand_landmarks, 330, 360)
+        )
+    else:
+        index_ok = indice_apunta_en_rango(hand_landmarks, 120, 240)
+
+    if index_ok:
+        return True
+
+    # Pulgar
+    hand_width, _ = get_hand_scale(hand_landmarks)
+    thr = hand_width * 0.15
+
+    p_tip = hand_landmarks.landmark[4]
+    p_ip = hand_landmarks.landmark[3]
+
+    if tipo_mano == "Right":
+        ok = (p_tip.x - p_ip.x) > thr
+    else:
+        ok = (p_ip.x - p_tip.x) > thr
+
+    if ok and dedos_cerrados_excluyendo(hand_landmarks, [4]):
+        if hand_landmarks.landmark[8].y > hand_landmarks.landmark[6].y:
+            return True
+
+    return False
+
+
+def es_apuntar_izquierda(hand_landmarks, tipo_mano):
+
+    if tipo_mano == "Right":
+        index_ok = indice_apunta_en_rango(hand_landmarks, 120, 240)
+    else:
+        index_ok = (
+            indice_apunta_en_rango(hand_landmarks, 0, 60) or
+            indice_apunta_en_rango(hand_landmarks, 330, 360)
+        )
+
+    if index_ok:
+        return True
+
+    # Pulgar
+    hand_width, _ = get_hand_scale(hand_landmarks)
+    thr = hand_width * 0.15
+
+    p_tip = hand_landmarks.landmark[4]
+    p_ip = hand_landmarks.landmark[3]
+
+    if tipo_mano == "Right":
+        ok = (p_ip.x - p_tip.x) > thr
+    else:
+        ok = (p_tip.x - p_ip.x) > thr
+
+    if ok and dedos_cerrados_excluyendo(hand_landmarks, [4]):
+        if hand_landmarks.landmark[8].y > hand_landmarks.landmark[6].y:
+            return True
+
+    return False
 
 
 # =========================
@@ -227,94 +196,83 @@ hands = mp_hands.Hands(
 
 cap = cv2.VideoCapture(0)
 
-# 🔥 Suavizado temporal
 historial = []
 HIST_SIZE = 5
 
 while True:
+
     ret, frame = cap.read()
     if not ret:
         break
 
-    frame = cv2.flip(frame, 1)  # espejo (más natural)
+    frame = cv2.flip(frame, 1)
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
     results = hands.process(rgb)
 
-    gesto = "NONE"
+    gesto = "HAND"
     color = (255, 255, 255)
+
     hay_mano = False
 
     if results.multi_hand_landmarks:
-        hay_mano = True 
-        for hand_landmarks in results.multi_hand_landmarks:
-            
-            gesto = "HAND"
 
-            dedos = contar_dedos(hand_landmarks)
-            
-            # =========================
-            # ORDEN IMPORTANTE
-            # =========================
-            #if es_offer(hand_landmarks):
-            #    gesto = "OFFER"
-            #    color = (0, 200, 255)
+        hay_mano = True
+
+        for hand_landmarks, handedness in zip(
+            results.multi_hand_landmarks,
+            results.multi_handedness
+        ):
+
+            tipo_mano = handedness.classification[0].label  # Left / Right
+
+            gesto = "HAND"
 
             if es_palm_stop(hand_landmarks):
                 gesto = "STOP"
                 color = (0, 255, 255)
-                
-            #elif es_puno(hand_landmarks):
-            #    gesto = "FIST"
-            #    color = (0, 0, 255)
 
-            #elif es_pulgar_arriba(hand_landmarks):
-            #    gesto = "THUMB UP"
-            #    color = (0, 255, 0)
-
-            elif es_apuntar_derecha(hand_landmarks):
+            elif es_apuntar_derecha(hand_landmarks, tipo_mano):
                 gesto = "RIGHT"
                 color = (255, 0, 0)
 
-            elif es_apuntar_izquierda(hand_landmarks):
+            elif es_apuntar_izquierda(hand_landmarks, tipo_mano):
                 gesto = "LEFT"
                 color = (255, 0, 0)
 
-            #elif es_ok(hand_landmarks):
-            #    gesto = "OK"
-            #    color = (255, 0, 255)
+            elif es_puno(hand_landmarks):
+                gesto = "HAND"
 
-            #elif dedos == 1:
-            #    gesto = "1 FINGER"
-            #    color = (255, 255, 0)
-
-            #elif dedos == 2:
-            #    gesto = "2 FINGERS"
-            #    color = (255, 255, 0)
-            #    
-            #elif dedos == 3:
-            #    gesto = "3 FINGERS"
-            #    color = (255, 255, 0)
-
-            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            mp_drawing.draw_landmarks(
+                frame,
+                hand_landmarks,
+                mp_hands.HAND_CONNECTIONS
+            )
 
     # =========================
-    # LÓGICA FINAL
+    # FILTRO TEMPORAL
     # =========================
+
     if not hay_mano:
-        gesto_final = "NONE"
         historial.clear()
+        gesto_final = "NONE"
+
     else:
-        if gesto == "HAND":
-            gesto_final = "HAND"
-        else:
-            historial.append(gesto)
-            if len(historial) > HIST_SIZE:
-                historial.pop(0)
+        historial.append(gesto)
+        if len(historial) > HIST_SIZE:
+            historial.pop(0)
 
-            gesto_final = max(set(historial), key=historial.count)
+        gesto_final = max(set(historial), key=historial.count)
 
-    cv2.putText(frame, gesto_final, (50, 50),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+    cv2.putText(
+        frame,
+        gesto_final,
+        (50, 50),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1,
+        color,
+        2
+    )
 
     cv2.imshow("Gestos", frame)
 
