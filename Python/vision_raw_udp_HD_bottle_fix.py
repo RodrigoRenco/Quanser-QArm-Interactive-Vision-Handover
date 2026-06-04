@@ -25,7 +25,7 @@ mp_hands = mp.solutions.hands
 # CONFIG
 # =========================
 
-MODEL_PATH = r"C:\Users\piopi\Desktop\Centrale\PP S8 Robotique\codes\catching the ball\my_model.pt"
+MODEL_PATH = r"Robotic-d95cd746ae5fc9a8d9ddb7a391bc395dab30e4f6/Detection Models/model_renco.pt"
 MIN_CONFIDENCE = 0.65
 BOTTLE_DIAMETER = 0.065
 BOTTLE_RADIUS = BOTTLE_DIAMETER / 2

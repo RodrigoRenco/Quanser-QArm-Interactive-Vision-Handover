@@ -25,7 +25,7 @@ mp_hands = mp.solutions.hands
 # CONFIG
 # =========================
 
-MODEL_PATH = r"C:\Users\piopi\Desktop\Centrale\PP S8 Robotique\codes\catching the ball\my_model.pt"
+MODEL_PATH = r"Robotic-d95cd746ae5fc9a8d9ddb7a391bc395dab30e4f6\Detection Models\my_model.pt"
 MIN_CONFIDENCE = 0.85
 BALL_DIAMETER = 0.067
 BALL_RADIUS = BALL_DIAMETER / 2
