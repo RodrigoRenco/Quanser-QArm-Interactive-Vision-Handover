@@ -8,9 +8,7 @@ import math
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
-# =========================
 # BASE
-# =========================
 
 def get_hand_scale(hand_landmarks):
     xs = [lm.x for lm in hand_landmarks.landmark]
@@ -18,10 +16,7 @@ def get_hand_scale(hand_landmarks):
 
     return max(xs) - min(xs), max(ys) - min(ys)
 
-
-# =========================
-# GESTOS BASE
-# =========================
+# BASE GESTURES
 
 def es_puno(hand_landmarks):
     tips = [8, 12, 16, 20]
@@ -42,9 +37,7 @@ def dedos_cerrados_excluyendo(hand_landmarks, excluir_indices):
     return True
 
 
-# =========================
-# ÍNDICE DIRECCIONAL
-# =========================
+# DIRECTIONAL INDEX POINTING DETECTION
 
 def indice_apunta_en_rango(hand_landmarks, angulo_min, angulo_max):
 
@@ -75,9 +68,7 @@ def indice_apunta_en_rango(hand_landmarks, angulo_min, angulo_max):
     return angulo_min <= angulo <= angulo_max
 
 
-# =========================
-# STOP MEJORADO (MÁS LEJOS)
-# =========================
+# UPGRADED STOP GESTURE
 
 def es_palm_stop(hand_landmarks):
 
@@ -100,7 +91,7 @@ def es_palm_stop(hand_landmarks):
 
     apertura = max(xs) - min(xs)
 
-    # 👇 MÁS ROBUSTO A DISTANCIA
+    # MORE ROBUST TO DISTANCE
     if apertura < hand_width * 0.45:
         return False
 
@@ -115,13 +106,11 @@ def es_palm_stop(hand_landmarks):
     return True
 
 
-# =========================
-# DETECCIÓN DIRECCIONAL CON MANO
-# =========================
+# DIRECTIONAL DETECTION WITH HAND
 
 def es_apuntar_derecha(hand_landmarks, tipo_mano):
 
-    # Índice
+    # INDEX
     if tipo_mano == "Right":
         index_ok = (
             indice_apunta_en_rango(hand_landmarks, 0, 60) or
@@ -133,7 +122,7 @@ def es_apuntar_derecha(hand_landmarks, tipo_mano):
     if index_ok:
         return True
 
-    # Pulgar
+    # THUMB
     hand_width, _ = get_hand_scale(hand_landmarks)
     thr = hand_width * 0.15
 
@@ -165,7 +154,7 @@ def es_apuntar_izquierda(hand_landmarks, tipo_mano):
     if index_ok:
         return True
 
-    # Pulgar
+    # THUMB
     hand_width, _ = get_hand_scale(hand_landmarks)
     thr = hand_width * 0.15
 
@@ -184,9 +173,7 @@ def es_apuntar_izquierda(hand_landmarks, tipo_mano):
     return False
 
 
-# =========================
 # DETECTOR
-# =========================
 
 hands = mp_hands.Hands(
     static_image_mode=False,
@@ -249,9 +236,7 @@ while True:
                 mp_hands.HAND_CONNECTIONS
             )
 
-    # =========================
-    # FILTRO TEMPORAL
-    # =========================
+    # TEMPORAL FILTER
 
     if not hay_mano:
         historial.clear()

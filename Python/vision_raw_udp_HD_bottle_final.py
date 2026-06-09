@@ -21,11 +21,10 @@ mp_drawing = mp.solutions.drawing_utils
 mp_hands = mp.solutions.hands
 
 
-# =========================
-# CONFIG
-# =========================
 
-MODEL_PATH = r"Robotic-d95cd746ae5fc9a8d9ddb7a391bc395dab30e4f6/Detection Models/model_renco.pt"
+# CONFIG
+
+MODEL_PATH = r"Detection Models\model_bottle.pt"
 MIN_CONFIDENCE = 0.65
 BOTTLE_DIAMETER = 0.065
 BOTTLE_RADIUS = BOTTLE_DIAMETER / 2
@@ -51,9 +50,7 @@ gesture_history = []
 HIST_SIZE = 5
 
 
-# =========================
-# GESTOS
-# =========================
+# GESTURES
 
 GESTO_TO_INT = {
     "NONE": 0,
@@ -75,9 +72,7 @@ def obtener_gesto(hand_landmarks, tipo_mano):
         return "HAND"
 
 
-# =========================
-# REALSENSE
-# =========================
+# REALSENSE PIPELINE
 
 pipeline = rs.pipeline()
 config = rs.config()
@@ -88,9 +83,7 @@ pipeline.start(config)
 print("[INFO] RealSense pipeline started...")
 
 
-# =========================
 # MAIN LOOP
-# =========================
 
 try:
     while True:
@@ -113,9 +106,7 @@ try:
         intr = color_frame.profile.as_video_stream_profile().intrinsics
         frame = np.asanyarray(color_frame.get_data())
 
-        # =========================
-        # HANDS
-        # =========================
+        # HAND GESTURE RECOGNITION
 
         gesto_str = "NONE"
 
@@ -150,9 +141,7 @@ try:
         cv2.putText(frame, f"Gesto: {gesto_str}", (10, 90),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-        # =========================
-        # YOLO
-        # =========================
+        # YOLO DETECTION
 
         results = model(frame, verbose=False)
         detections = results[0].boxes
@@ -207,9 +196,7 @@ try:
 
                 break
 
-        # =========================
-        # UDP
-        # =========================
+        # UDP COMMUNICATION
 
         try:
             found_now_flag = 1.0 if found_now else 0.0
@@ -232,9 +219,7 @@ try:
         except Exception as e:
             print(f"UDP Error: {e}")
 
-        # =========================
-        # DEBUG
-        # =========================
+        # DEBUG INFO
 
         fps = 1.0 / (time.perf_counter() - t_start)
 
@@ -249,7 +234,7 @@ try:
                     (0, 255, 0) if found_now else (0, 0, 255),
                     2)
 
-        cv2.imshow("YOLO Ball Detection + Gestos", frame)
+        cv2.imshow("YOLO Detection + Gestures", frame)
 
         if cv2.waitKey(1) & 0xFF in [ord('q'), ord('Q')]:
             break
